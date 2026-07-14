@@ -177,7 +177,63 @@ COPY app.jar /app.jar
 ENTRYPOINT ["java", "-jar", "/app.jar"]
 ```
 
-各服务可独立打包镜像，结合 `docker-compose` 编排 Nacos + MySQL + 各微服务容器。
+各服务可独立打包镜像，结合 `docker-compose` 编排 Nacos + MySQL + RabbitMQ + 各微服务容器。
+
+---
+
+## 📨 RabbitMQ 异步消息
+
+项目使用 RabbitMQ 解耦服务间同步调用，核心消息流如下：
+
+### 消息架构
+
+```
+┌───────────────┐     order.created     ┌────────────────┐
+│               │──────────────────────▶│ item-service    │
+│  trade-service │                      │  └─ 扣减库存    │
+│  (订单服务)    │──┐                   └────────────────┘
+│               │  ├── order.created   ┌────────────────┐
+│               │  └──────────────────▶│ cart-service    │
+│               │                      │  └─ 清购物车    │
+└───────┬───────┘                      └────────────────┘
+        │
+        │ order.timeout (DLQ, 30min TTL)
+        ▼
+┌───────────────┐     order.paid       ┌────────────────┐
+│  pay-service   │──────────────────────▶│ trade-service  │
+│  (支付服务)    │                      │  └─ 标记已支付  │
+└───────────────┘                      └────────────────┘
+```
+
+### 交换机与队列
+
+| 交换机 | 类型 | 说明 |
+|--------|------|------|
+| `hmall.direct` | Direct | 业务主交换机 |
+
+| 队列 | 路由键 | 消费者 | 说明 |
+|------|--------|--------|------|
+| `hmall.queue.order.created.item` | `order.created` | item-service | 扣减库存 |
+| `hmall.queue.order.created.cart` | `order.created` | cart-service | 清理购物车 |
+| `hmall.queue.order.paid` | `order.paid` | trade-service | 更新订单为已支付 |
+| `hmall.queue.order.timeout.wait` | `order.timeout` | — | 超时等待（TTL 30min） |
+| `hmall.queue.order.timeout.check` | `order.timeout.check` | trade-service | 超时取消订单 |
+
+> 超时队列采用 **死信队列（DLQ）** 方案：消息先进入 `order.timeout.wait` 队列（无消费者，TTL=30min），到期后由 RabbitMQ 自动转发至 `order.timeout.check` 队列进行消费。
+
+### 启动 RabbitMQ
+
+```bash
+docker run -d \
+  --name rabbitmq \
+  -p 5672:5672 \
+  -p 15672:15672 \
+  -e RABBITMQ_DEFAULT_USER=guest \
+  -e RABBITMQ_DEFAULT_PASS=guest \
+  rabbitmq:3-management
+```
+
+管理控制台：http://localhost:15672（guest/guest）
 
 ---
 

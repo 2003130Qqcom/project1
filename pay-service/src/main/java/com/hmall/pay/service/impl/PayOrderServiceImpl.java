@@ -3,7 +3,6 @@ package com.hmall.pay.service.impl;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.core.toolkit.StringUtils;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
-import com.hmall.api.client.TradeClient;
 import com.hmall.api.client.UserClient;
 import com.hmall.api.dto.PayApplyDTO;
 import com.hmall.api.dto.PayOrderFormDTO;
@@ -13,10 +12,14 @@ import com.hmall.common.utils.UserContext;
 import com.hmall.pay.domain.po.PayOrder;
 import com.hmall.pay.enums.PayStatus;
 import com.hmall.pay.mapper.PayOrderMapper;
+import com.hmall.pay.publisher.PayEventPublisher;
 import com.hmall.pay.service.IPayOrderService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 
@@ -32,8 +35,8 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class PayOrderServiceImpl extends ServiceImpl<PayOrderMapper, PayOrder> implements IPayOrderService {
 
-            private final TradeClient tradeClient;
     private final UserClient userClient;
+    private final PayEventPublisher payEventPublisher;
 
 
     @Override
@@ -54,15 +57,20 @@ public class PayOrderServiceImpl extends ServiceImpl<PayOrderMapper, PayOrder> i
             throw new BizIllegalException("交易已支付或关闭！");
         }
         // 3.调用用户服务扣减余额
-
         userClient.deductMoney( payOrderFormDTO.getPw(), po.getAmount());
         // 4.修改支付单状态
         boolean success = markPayOrderSuccess(payOrderFormDTO.getId(), LocalDateTime.now());
         if (!success) {
             throw new BizIllegalException("交易已支付或关闭！");
         }
-        // 5.调用交易服务标记订单支付成功
-      tradeClient.markOrderPaySuccess(po.getPayOrderNo());
+        // 5.通过 MQ 异步通知交易服务标记订单支付成功（事务提交后再发消息）
+        Long orderId = po.getPayOrderNo();
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                payEventPublisher.publishOrderPaid(orderId);
+            }
+        });
     }
 
     public boolean markPayOrderSuccess(Long id, LocalDateTime successTime) {
