@@ -119,7 +119,21 @@ hmall/
 
 **1. 启动 Nacos**（默认地址 `localhost:8848`）
 
-**2. 创建数据库** — 按上述数据库设计创建各库
+**2. 初始化数据库**
+
+```bash
+# 创建数据库并导入数据（在 MySQL 客户端中执行）
+mysql -u root -p < sql/hm-user.sql
+mysql -u root -p < sql/hm-item.sql
+mysql -u root -p < sql/hm-cart.sql
+mysql -u root -p < sql/hm-trade.sql
+mysql -u root -p < sql/hm-pay.sql
+
+# Nacos 配置库（可选，如果使用独立 Nacos 需导入）
+mysql -u root -p < sql/nacos.sql
+```
+
+> SQL 文件位于 `sql/` 目录下，按服务拆分，每个文件包含建库、建表和测试数据。
 
 **3. 编译构建**
 
