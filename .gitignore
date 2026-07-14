@@ -1,0 +1,40 @@
+# Maven
+target/
+*.class
+*.jar
+*.war
+*.log
+*.iml
+.idea/
+*.ipr
+*.iws
+
+# IDE
+.vscode/
+.settings/
+.project
+.classpath
+.factorypath
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+
+# Application config (local dev)
+*-local*.yaml
+*-local*.yml
+*-local*.properties
+application-local.yaml
+application-local.properties
+
+# Docker
+.env
+
+# Temp
+*.tmp
+*.bak
